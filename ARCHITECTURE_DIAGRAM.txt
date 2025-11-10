@@ -1,0 +1,181 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║              PRAVENYA INFRASTRUCTURE GLOBAL - RESOURCE DIAGRAM              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         AZURE AD (ENTRA ID)                                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Security Groups:                    App Registrations:                     │
+│  ┌─────────────────────┐            ┌──────────────────────────┐            │
+│  │ pravenya-admins    │            │ pravenya-web              │            │
+│  │ (Security Group)   │            │ App Registration          │            │
+│  └────────────────────┘            └──────────┬───────────────┘            │
+│                                               │                              │
+│  ┌─────────────────────┐                      │                              │
+│  │ pravenya-devs      │                      ▼                              │
+│  │ (Security Group)   │            ┌──────────────────────────┐            │
+│  └────────────────────┘            │ Service Principal        │            │
+│                                     │ pravenya-web             │            │
+│  ┌─────────────────────┐            └──────────────────────────┘            │
+│  │ pravenya-viewers   │                                                 │
+│  │ (Security Group)   │            ┌──────────────────────────┐            │
+│  └────────────────────┘            │ pravenya-github-actions   │            │
+│                                     │ App Registration          │            │
+│                                     └──────────┬───────────────┘            │
+│                                                │                              │
+│                                                ▼                              │
+│                                     ┌──────────────────────────┐            │
+│                                     │ Service Principal         │            │
+│                                     │ pravenya-github-actions   │            │
+│                                     └──────────┬───────────────┘            │
+│                                                │                              │
+│                                                ▼                              │
+│                                     ┌──────────────────────────┐            │
+│                                     │ Application Password      │            │
+│                                     │ (GitHub Actions Secret)   │            │
+│                                     │ Expires: 1 year           │            │
+│                                     └──────────────────────────┘            │
+│                                                                              │
+│  Required Permissions (for GitHub Actions SP):                               │
+│  • Group.ReadWrite.All                                                       │
+│  • Application.ReadWrite.All                                                 │
+│  • Directory.ReadWrite.All                                                   │
+│  • User.ReadWrite.All                                                        │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                        │
+                                        │ Uses
+                                        ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      MANAGEMENT GROUPS HIERARCHY                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│                          ┌──────────────────────┐                          │
+│                          │ mg-pravenya-root     │                          │
+│                          │ (Root Management     │                          │
+│                          │  Group)              │                          │
+│                          └──────────┬───────────┘                          │
+│                                     │                                        │
+│                    ┌────────────────┴────────────────┐                      │
+│                    │                                 │                      │
+│        ┌───────────▼──────────┐        ┌───────────▼──────────┐          │
+│        │ mg-pravenya-nonprod  │        │ mg-pravenya-prod     │          │
+│        │ (Non-Production      │        │ (Production          │          │
+│        │  Management Group)    │        │  Management Group)   │          │
+│        └───────────┬───────────┘        └───────────┬───────────┘          │
+│                    │                                 │                      │
+│        ┌───────────▼───────────┐        ┌───────────▼───────────┐          │
+│        │ Non-Prod Subscriptions│        │ Prod Subscriptions    │          │
+│        │ (Multiple subscriptions)      │ (Multiple subscriptions)│          │
+│        └───────────────────────┘        └───────────────────────┘          │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                        │
+                                        │ Assigned to
+                                        ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            ROLE ASSIGNMENTS                                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌──────────────────────────────────────────────────────────────┐          │
+│  │ Service Principal: pravenya-github-actions                   │          │
+│  │ Role: Contributor                                            │          │
+│  │ Scope: Subscription (if subscription_id is provided)        │          │
+│  │ Purpose: Allow GitHub Actions to manage Azure resources      │          │
+│  └──────────────────────────────────────────────────────────────┘          │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                        │
+                                        │ Enforced on
+                                        ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              POLICIES                                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Policy Definition:                                                          │
+│  ┌──────────────────────────────────────────────────────────────┐          │
+│  │ Name: pravenya-require-tags                                  │          │
+│  │ Type: Custom                                                 │          │
+│  │ Effect: Deny                                                  │          │
+│  │ Required Tags:                                               │          │
+│  │   • Environment                                               │          │
+│  │   • Project                                                   │          │
+│  │   • Owner                                                      │          │
+│  └──────────────────────────────────────────────────────────────┘          │
+│                    │                                                         │
+│                    ▼                                                         │
+│  Policy Assignment:                                                         │
+│  ┌──────────────────────────────────────────────────────────────┐          │
+│  │ Name: prv-req-tags                                            │          │
+│  │ Scope: Subscription (if subscription_id is provided)         │          │
+│  │ Enforcement: Enabled                                          │          │
+│  └──────────────────────────────────────────────────────────────┘          │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                        │
+                                        │ Uses
+                                        ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          GITHUB ACTIONS                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌──────────────────────────────────────────────────────────────┐          │
+│  │ GitHub Actions Workflow                                      │          │
+│  │ Uses: pravenya-github-actions Service Principal              │          │
+│  │                                                               │          │
+│  │ Secrets Required:                                            │          │
+│  │   • AZURE_CLIENT_ID (Service Principal Client ID)            │          │
+│  │   • AZURE_CLIENT_SECRET (Application Password)              │          │
+│  │   • AZURE_SUBSCRIPTION_ID                                    │          │
+│  │   • AZURE_TENANT_ID                                           │          │
+│  │   • AZURE_CREDENTIALS (Full JSON)                            │          │
+│  └──────────────────────────────────────────────────────────────┘          │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                              DEPLOYMENT FLOW                                 ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+1. Management Groups Created
+   └─> Root → Non-Prod → Prod
+
+2. Subscriptions Associated
+   └─> Subscriptions linked to management groups
+
+3. Entra ID Groups Created
+   └─> admins, devs, viewers
+
+4. App Registrations Created
+   └─> pravenya-web, pravenya-github-actions
+
+5. Service Principals Created
+   └─> From app registrations
+
+6. Application Password Created
+   └─> For GitHub Actions service principal
+
+7. Role Assignments Created
+   └─> GitHub Actions SP → Contributor role
+
+8. Policy Definition Created
+   └─> pravenya-require-tags
+
+9. Policy Assignment Created
+   └─> Applied to subscriptions
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                          PERMISSIONS SUMMARY                                 ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+GitHub Actions Service Principal Permissions:
+├─ Azure Resource Manager:
+│  └─ Contributor role on subscriptions
+│
+└─ Microsoft Graph API (for Azure AD management):
+   ├─ Group.ReadWrite.All
+   ├─ Application.ReadWrite.All
+   ├─ Directory.ReadWrite.All
+   └─ User.ReadWrite.All
+
