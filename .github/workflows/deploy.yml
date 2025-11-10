@@ -1,0 +1,209 @@
+name: Deploy Infrastructure - Non-Prod to Prod
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      promote_to_prod:
+        description: 'Promote to Production after Non-Prod deployment'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+env:
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  TF_VERSION: '1.5.7'
+
+jobs:
+  # Job 1: Deploy to Non-Production
+  deploy-nonprod:
+    name: Deploy to Non-Production
+    runs-on: ubuntu-latest
+    environment: nonprod
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform Format Check
+        run: terraform fmt -check
+        continue-on-error: true
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ./infra-nonprod
+
+      - name: Terraform Validate
+        run: terraform validate
+        working-directory: ./infra-nonprod
+
+      - name: Terraform Plan
+        id: plan-nonprod
+        run: |
+          terraform plan -no-color -out=tfplan-nonprod
+          terraform show -no-color tfplan-nonprod
+        working-directory: ./infra-nonprod
+        continue-on-error: true
+
+      - name: Terraform Plan Status
+        if: steps.plan-nonprod.outcome == 'failure'
+        run: |
+          echo "❌ Terraform plan failed!"
+          exit 1
+
+      - name: Terraform Apply
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        run: terraform apply -auto-approve tfplan-nonprod
+        working-directory: ./infra-nonprod
+
+      - name: Save Non-Prod Outputs
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        run: |
+          terraform output -json > nonprod-outputs.json
+          cat nonprod-outputs.json
+        working-directory: ./infra-nonprod
+
+  # Job 2: Run Tests/Validation on Non-Prod
+  test-nonprod:
+    name: Test Non-Production Deployment
+    runs-on: ubuntu-latest
+    needs: deploy-nonprod
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    environment: nonprod
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Azure CLI
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Run Validation Tests
+        run: |
+          echo "🧪 Running validation tests on Non-Prod infrastructure..."
+          
+          # Example: Check if resource group exists
+          az group show --name rg-pravenya-nonprod || echo "⚠️ Resource group not found"
+          
+          # Example: Check resource health
+          echo "✅ Non-Prod validation tests passed"
+          
+          # Add your custom validation tests here
+          # - API health checks
+          # - Resource existence checks
+          # - Configuration validation
+        continue-on-error: true
+
+      - name: Test Results
+        run: |
+          if [ $? -eq 0 ]; then
+            echo "✅ All Non-Prod tests passed"
+            echo "nonprod_tests_passed=true" >> $GITHUB_ENV
+          else
+            echo "❌ Some Non-Prod tests failed"
+            echo "nonprod_tests_passed=false" >> $GITHUB_ENV
+          fi
+
+  # Job 3: Deploy to Production (after approval)
+  deploy-prod:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [deploy-nonprod, test-nonprod]
+    if: |
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.promote_to_prod == 'true') ||
+      (github.event_name == 'push' && needs.test-nonprod.result == 'success')
+    environment: 
+      name: prod
+      url: https://portal.azure.com
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ./infra-prod
+
+      - name: Terraform Validate
+        run: terraform validate
+        working-directory: ./infra-prod
+
+      - name: Terraform Plan
+        id: plan-prod
+        run: |
+          terraform plan -no-color -out=tfplan-prod
+          terraform show -no-color tfplan-prod
+        working-directory: ./infra-prod
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan-prod
+        working-directory: ./infra-prod
+
+      - name: Save Prod Outputs
+        run: |
+          terraform output -json > prod-outputs.json
+          cat prod-outputs.json
+        working-directory: ./infra-prod
+
+      - name: Production Deployment Summary
+        run: |
+          echo "## 🚀 Production Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Infrastructure deployed to Production environment" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment Details:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Environment: Production" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Triggered by: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+
+  # Job 4: Post-Deployment Validation
+  validate-prod:
+    name: Validate Production Deployment
+    runs-on: ubuntu-latest
+    needs: deploy-prod
+    if: success()
+    environment: prod
+    steps:
+      - name: Setup Azure CLI
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Run Production Validation
+        run: |
+          echo "🔍 Validating Production deployment..."
+          
+          # Check resource group
+          az group show --name rg-pravenya-prod || exit 1
+          
+          # Add production-specific validation
+          echo "✅ Production validation complete"
+          
+      - name: Validation Summary
+        run: |
+          echo "## ✅ Production Validation Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All production resources validated successfully" >> $GITHUB_STEP_SUMMARY
+

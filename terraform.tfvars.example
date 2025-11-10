@@ -1,0 +1,20 @@
+# Example terraform.tfvars file
+# Copy this file to terraform.tfvars and fill in your values
+# terraform.tfvars is in .gitignore and will NOT be committed to git
+
+tenant_id = "00000000-0000-0000-0000-000000000000"  # Your Azure AD Tenant ID
+
+# List of subscription IDs to associate with mg-nonprod
+# Format: "/subscriptions/12345678-1234-1234-1234-123456789012"
+nonprod_subscription_ids = [
+  # "/subscriptions/12345678-1234-1234-1234-123456789012"
+]
+
+# List of subscription IDs to associate with mg-prod
+# Format: "/subscriptions/87654321-4321-4321-4321-210987654321"
+prod_subscription_ids = [
+  # "/subscriptions/87654321-4321-4321-4321-210987654321"
+]
+
+location = "East US"  # Azure region for resources
+
