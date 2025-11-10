@@ -37,3 +37,4 @@ terraform.rc
 .env
 .env.local
 
+.storage_account_name
