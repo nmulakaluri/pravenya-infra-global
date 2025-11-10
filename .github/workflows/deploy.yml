@@ -43,22 +43,23 @@ jobs:
 
       - name: Terraform Format Check
         run: terraform fmt -check
+        working-directory: .
         continue-on-error: true
 
       - name: Terraform Init
         run: terraform init
-        working-directory: ./pravenya-infra-global
+        working-directory: .
 
       - name: Terraform Validate
         run: terraform validate
-        working-directory: ./pravenya-infra-global
+        working-directory: .
 
       - name: Terraform Plan
         id: plan-nonprod
         run: |
           terraform plan -no-color -out=tfplan-nonprod
           terraform show -no-color tfplan-nonprod
-        working-directory: ./pravenya-infra-global
+        working-directory: .
         continue-on-error: true
 
       - name: Terraform Plan Status
@@ -70,14 +71,14 @@ jobs:
       - name: Terraform Apply
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         run: terraform apply -auto-approve tfplan-nonprod
-        working-directory: ./pravenya-infra-prod
+        working-directory: .
 
       - name: Save Non-Prod Outputs
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         run: |
           terraform output -json > nonprod-outputs.json
           cat nonprod-outputs.json
-        working-directory: ./pravenya-infra-prod
+        working-directory: .
 
   # Job 2: Run Tests/Validation on Non-Prod
   test-nonprod:
