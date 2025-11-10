@@ -133,29 +133,40 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Run Validation Tests
+        id: validation-tests
         run: |
           echo "🧪 Running validation tests on Non-Prod infrastructure..."
+          TEST_FAILED=0
           
-          # Example: Check if resource group exists
-          az group show --name rg-pravenya-nonprod || echo "⚠️ Resource group not found"
-          
-          # Example: Check resource health
-          echo "✅ Non-Prod validation tests passed"
+          # Check if resource group exists
+          if ! az group show --name rg-pravenya-nonprod > /dev/null 2>&1; then
+            echo "❌ Resource group rg-pravenya-nonprod not found"
+            TEST_FAILED=1
+          else
+            echo "✅ Resource group exists"
+          fi
           
           # Add your custom validation tests here
           # - API health checks
           # - Resource existence checks
           # - Configuration validation
-        continue-on-error: true
-
-      - name: Test Results
-        run: |
-          if [ $? -eq 0 ]; then
-            echo "✅ All Non-Prod tests passed"
-            echo "nonprod_tests_passed=true" >> $GITHUB_ENV
+          
+          if [ $TEST_FAILED -eq 0 ]; then
+            echo "✅ All Non-Prod validation tests passed"
+            echo "test_status=success" >> $GITHUB_OUTPUT
           else
-            echo "❌ Some Non-Prod tests failed"
-            echo "nonprod_tests_passed=false" >> $GITHUB_ENV
+            echo "❌ Some Non-Prod validation tests failed"
+            echo "test_status=failure" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: Test Results Summary
+        if: always()
+        run: |
+          if [ "${{ steps.validation-tests.outcome }}" == "success" ]; then
+            echo "✅ All Non-Prod tests passed"
+          else
+            echo "❌ Non-Prod tests failed - check logs above for details"
           fi
 
   # Job 3: Deploy to Production (after approval)
@@ -165,7 +176,9 @@ jobs:
     needs: [deploy-nonprod, test-nonprod]
     if: |
       (github.event_name == 'workflow_dispatch' && github.event.inputs.promote_to_prod == 'true') ||
-      (github.event_name == 'push' && needs.test-nonprod.result == 'success')
+      (github.event_name == 'push' && 
+       needs.deploy-nonprod.result == 'success' && 
+       needs.test-nonprod.result == 'success')
     environment: 
       name: prod
       url: https://portal.azure.com
