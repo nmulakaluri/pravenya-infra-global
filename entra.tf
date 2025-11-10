@@ -56,7 +56,9 @@ resource "azuread_application_password" "github_actions" {
 }
 
 # Assign Contributor role to the service principal
+# Only create if subscription_id is provided
 resource "azurerm_role_assignment" "github_actions_contributor" {
+  count                = var.subscription_id != "" ? 1 : 0
   scope                = "/subscriptions/${var.subscription_id}"
   role_definition_name = "Contributor"
   principal_id         = azuread_service_principal.github_actions.object_id
