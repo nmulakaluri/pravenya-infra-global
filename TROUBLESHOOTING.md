@@ -277,6 +277,73 @@ If the secret has expired or been deleted, create a new one:
 - The secret value is different from the secret ID (Key ID)
 - Make sure you're copying the **Value**, not the **Secret ID**
 
+### Error: Terraform Init Hanging or Timing Out - Backend Storage Access
+
+**Problem:**
+Terraform init is hanging or timing out when trying to access the backend storage account.
+
+**Symptoms:**
+- `terraform init` runs for 7+ minutes without completing
+- Eventually times out or errors
+- Error about accessing storage account or container
+
+**Root Cause:**
+The service principal doesn't have permissions to access the Azure Storage account used for Terraform state.
+
+**Solution:**
+
+The service principal needs **Storage Blob Data Contributor** role on the storage account to read/write Terraform state files.
+
+#### Option 1: Grant Storage Permissions via Azure CLI
+
+```bash
+# Get your service principal Object ID
+SP_OBJECT_ID=$(az ad sp show --id <SERVICE_PRINCIPAL_CLIENT_ID> --query id -o tsv)
+
+# Grant Storage Blob Data Contributor role on the storage account
+az role assignment create \
+    --assignee "$SP_OBJECT_ID" \
+    --role "Storage Blob Data Contributor" \
+    --scope "/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/rg-pravenya-terraform-state/providers/Microsoft.Storage/storageAccounts/tfstatepravenya74f45b"
+```
+
+Replace:
+- `<SERVICE_PRINCIPAL_CLIENT_ID>` with your service principal Client ID (e.g., `e2d49ead-387c-4032-a71b-91c19b72ed27`)
+- `<SUBSCRIPTION_ID>` with your subscription ID (e.g., `b99aacbc-2d02-49b1-9d5d-561ba9909ff5`)
+
+#### Option 2: Grant Storage Permissions via Azure Portal
+
+1. Go to Azure Portal → **Storage accounts**
+2. Find your storage account: `tfstatepravenya74f45b`
+3. Go to **Access control (IAM)**
+4. Click **Add** → **Add role assignment**
+5. Select role: **Storage Blob Data Contributor**
+6. Assign access to: **User, group, or service principal**
+7. Search for your service principal: `pravenya-github-actions`
+8. Click **Save**
+
+#### Option 3: Use Storage Account Key (Less Secure)
+
+If you can't grant role-based access, you can use the storage account key:
+
+1. Get the storage account key:
+   ```bash
+   az storage account keys list \
+       --resource-group rg-pravenya-terraform-state \
+       --account-name tfstatepravenya74f45b \
+       --query "[0].value" -o tsv
+   ```
+
+2. Add it as a GitHub Secret: `ARM_ACCESS_KEY`
+
+3. Terraform will automatically use this for backend authentication
+
+**Important Notes:**
+- Storage Blob Data Contributor role is recommended for security
+- Role assignments may take 2-5 minutes to propagate
+- The workflow now has a 5-minute timeout for init to prevent hanging
+- If init still hangs, check network connectivity and storage account accessibility
+
 ## Getting Help
 
 If you encounter other issues:

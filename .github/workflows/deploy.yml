@@ -48,7 +48,10 @@ jobs:
         continue-on-error: true
 
       - name: Terraform Init
-        run: terraform init
+        timeout-minutes: 5
+        run: |
+          echo "🔧 Initializing Terraform backend..."
+          terraform init -input=false -upgrade
         working-directory: .
 
       - name: Terraform Validate
@@ -177,7 +180,10 @@ jobs:
           terraform_wrapper: false
 
       - name: Terraform Init
-        run: terraform init
+        timeout-minutes: 5
+        run: |
+          echo "🔧 Initializing Terraform backend..."
+          terraform init -input=false -upgrade
         working-directory: ./infra-prod
 
       - name: Terraform Validate
