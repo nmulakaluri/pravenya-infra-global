@@ -57,8 +57,10 @@ jobs:
       - name: Terraform Plan
         id: plan-nonprod
         run: |
-          terraform plan -no-color -out=tfplan-nonprod
-          terraform show -no-color tfplan-nonprod
+          terraform plan -no-color -out=tfplan-nonprod 2>&1 | tee plan-output.txt || true
+          if [ -f tfplan-nonprod ]; then
+            terraform show -no-color tfplan-nonprod
+          fi
         working-directory: .
         continue-on-error: true
 
@@ -66,6 +68,13 @@ jobs:
         if: steps.plan-nonprod.outcome == 'failure'
         run: |
           echo "❌ Terraform plan failed!"
+          echo ""
+          echo "**Error Details:**"
+          if [ -f plan-output.txt ]; then
+            cat plan-output.txt
+          else
+            echo "Plan output file not found. Check the Terraform Plan step logs above for details."
+          fi
           exit 1
 
       - name: Terraform Apply
