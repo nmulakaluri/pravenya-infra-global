@@ -200,6 +200,83 @@ az role assignment create \
 - Role assignments may take 2-5 minutes to propagate
 - If you get "insufficient permissions" errors, you need higher privileges to grant these roles
 
+### Error: "Invalid client secret provided" - Authentication Failed
+
+**Problem:**
+The service principal client secret in GitHub Secrets is invalid, expired, or incorrect.
+
+**Error Message:**
+```
+Error: building account: could not acquire access token to parse claims: 
+clientCredentialsToken: received HTTP status 401 with response: 
+{"error":"invalid_client","error_description":"AADSTS7000215: Invalid client secret provided. 
+Ensure the secret being sent in the request is the client secret value, not the client secret ID..."}
+```
+
+**Root Cause:**
+The `AZURE_CLIENT_SECRET` in GitHub Secrets is either:
+- Expired (application passwords expire after their expiration date)
+- Incorrect (wrong value stored)
+- Contains the secret ID instead of the secret value
+- Was deleted from Azure AD
+
+**Solution:**
+
+#### Option 1: Get Secret from Terraform Output (If Secret Still Exists)
+
+If the secret was created via Terraform and still exists:
+
+```bash
+cd pravenya-infra-global
+terraform output -raw github_actions_client_secret
+```
+
+Then update the GitHub Secret:
+1. Go to GitHub → Repository → Settings → Secrets and variables → Actions
+2. Find `AZURE_CLIENT_SECRET`
+3. Click **Update**
+4. Paste the secret value from Terraform output
+5. Click **Update secret**
+
+#### Option 2: Create New Application Password via Terraform
+
+If the secret has expired or been deleted, create a new one:
+
+1. **Option A: Update Terraform to create a new password**
+   - The `azuread_application_password` resource will create a new password
+   - Run `terraform apply` to create a new secret
+   - Get the new secret: `terraform output -raw github_actions_client_secret`
+   - Update GitHub Secret with the new value
+
+2. **Option B: Create password manually via Azure CLI**
+   ```bash
+   # Create a new password for the application
+   az ad app credential reset \
+       --id e2d49ead-387c-4032-a71b-91c19b72ed27 \
+       --append \
+       --display-name "GitHub Actions Secret"
+   ```
+   - This will output a new password - save it immediately!
+   - Update GitHub Secret `AZURE_CLIENT_SECRET` with the new value
+
+3. **Option C: Create password via Azure Portal**
+   - Go to Azure Portal → Azure Active Directory → App registrations
+   - Find your app: `pravenya-github-actions` (Client ID: `e2d49ead-387c-4032-a71b-91c19b72ed27`)
+   - Go to **Certificates & secrets**
+   - Click **New client secret**
+   - Add description: "GitHub Actions Secret"
+   - Set expiration (e.g., 1 year)
+   - Click **Add**
+   - **Copy the secret value immediately** (it won't be shown again!)
+   - Update GitHub Secret `AZURE_CLIENT_SECRET` with the new value
+
+**Important Notes:**
+- Application passwords are only shown once when created
+- Always save the secret value immediately
+- Update GitHub Secrets after creating a new password
+- The secret value is different from the secret ID (Key ID)
+- Make sure you're copying the **Value**, not the **Secret ID**
+
 ## Getting Help
 
 If you encounter other issues:
