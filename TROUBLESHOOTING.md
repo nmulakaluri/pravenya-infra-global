@@ -106,6 +106,100 @@ This has been fixed. Resources that use `subscription_id` are now conditional an
 
 If you want to create these resources, set `subscription_id` in your `terraform.tfvars` or via `TF_VAR_subscription_id` environment variable.
 
+### Error: "AuthorizationFailed" - Cannot create/delete Management Groups, Policy Assignments, or Role Assignments
+
+**Problem:**
+The service principal doesn't have sufficient Azure RBAC permissions to:
+- Create/delete Management Groups
+- Create/delete Policy Assignments
+- Create/delete Role Assignments
+
+**Error Messages:**
+```
+Error: unable to create Management Group "mg-pravenya-root": 
+Permission to write on resources of type 'Microsoft.Management/managementGroups' is required
+
+Error: deleting Policy Assignment: unexpected status 403 (403 Forbidden) with error: 
+AuthorizationFailed: The client does not have authorization to perform action 
+'Microsoft.Authorization/policyAssignments/delete'
+
+Error: authorization.RoleAssignmentsClient#Delete: Failure responding to request: 
+StatusCode=403 Code="AuthorizationFailed" Message="The client does not have 
+authorization to perform action 'Microsoft.Authorization/roleAssignments/delete'"
+```
+
+**Root Cause:**
+The service principal only has `Contributor` role at subscription level, but needs additional roles at the tenant root management group level to manage:
+- Management Groups (requires `Management Group Contributor`)
+- Policy Assignments (requires `Policy Contributor`)
+- Role Assignments (requires `User Access Administrator`)
+
+**Solution:**
+
+#### Option 1: Grant Roles Using Script (Recommended)
+
+Use the provided script to grant the necessary roles:
+
+```bash
+# Get your service principal Client ID from GitHub Secrets
+# Then run:
+./grant-azure-rbac-roles.sh <YOUR_SERVICE_PRINCIPAL_CLIENT_ID>
+```
+
+This script will grant:
+- `Management Group Contributor` at tenant root
+- `Policy Contributor` at tenant root
+- `User Access Administrator` at tenant root
+
+**Prerequisites:**
+- You must be logged in as a **Global Administrator** or have **Owner** role at tenant root
+- The service principal must already exist
+
+#### Option 2: Grant Roles Manually via Azure Portal
+
+1. Go to Azure Portal → **Management groups**
+2. Select the **Tenant Root Group** (or your root management group)
+3. Go to **Access control (IAM)**
+4. Click **Add** → **Add role assignment**
+5. Grant the following roles to your service principal:
+   - **Management Group Contributor** - For creating/deleting management groups
+   - **Policy Contributor** - For creating/deleting policy assignments
+   - **User Access Administrator** - For creating/deleting role assignments
+6. Repeat for subscription level if needed
+
+#### Option 3: Grant Roles via Azure CLI
+
+```bash
+# Get your service principal Object ID
+SP_OBJECT_ID=$(az ad sp show --id <SERVICE_PRINCIPAL_CLIENT_ID> --query id -o tsv)
+
+# Get tenant root management group ID
+TENANT_ROOT_MG="/providers/Microsoft.Management/managementGroups/<TENANT_ID>"
+
+# Grant Management Group Contributor
+az role assignment create \
+    --assignee "$SP_OBJECT_ID" \
+    --role "Management Group Contributor" \
+    --scope "$TENANT_ROOT_MG"
+
+# Grant Policy Contributor
+az role assignment create \
+    --assignee "$SP_OBJECT_ID" \
+    --role "Policy Contributor" \
+    --scope "$TENANT_ROOT_MG"
+
+# Grant User Access Administrator
+az role assignment create \
+    --assignee "$SP_OBJECT_ID" \
+    --role "User Access Administrator" \
+    --scope "$TENANT_ROOT_MG"
+```
+
+**Important Notes:**
+- You must be a **Global Administrator** or have **Owner** role at tenant root to grant these roles
+- Role assignments may take 2-5 minutes to propagate
+- If you get "insufficient permissions" errors, you need higher privileges to grant these roles
+
 ## Getting Help
 
 If you encounter other issues:
